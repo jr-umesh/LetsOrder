@@ -22,8 +22,10 @@ class Settings(BaseSettings):
         raise ValueError(v)
 
     PROJECT_NAME: str
-    STATIC_PATH: str = "/backend/static"
+    STATIC_PATH: str = "./static"
     STATIC_URL: str = "/static"
+    DEFAULT_IMG: str = "default_img.jpg"
+    DEFAULT_IMG_URL = f"{STATIC_URL}/{DEFAULT_IMG}"
 
     POSTGRES_SERVER: str
     POSTGRES_USER: str
@@ -40,6 +42,7 @@ class Settings(BaseSettings):
 
     FIRST_SUPERUSER_EMAIL: str
     FIRST_SUPERUSER_PASSWORD: str
+    TEST_USER_EMAIL: str = "test_user@example.com"
 
     class Config:
         case_sensitive = True

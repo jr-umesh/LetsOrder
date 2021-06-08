@@ -5,8 +5,10 @@ from sqlalchemy.orm.session import Session
 from app.core.security import get_password_hash, verify_password
 
 from .base import CRUDBase
-from app.models import User, Image
+from app.models import User, Image, UserRole
 from app.schemas import UserCreate, UserUpdate
+from .image import image as crud_image
+from app.core.config import settings
 
 
 class UserCRUD(CRUDBase[User, UserCreate, UserUpdate]):
@@ -16,10 +18,11 @@ class UserCRUD(CRUDBase[User, UserCreate, UserUpdate]):
     def create(self, db: Session, *, obj_in: UserCreate) -> User:
         db_obj = User(
             email=obj_in.email,
-            hashed_password=get_password_hash(obj_in.password),
+            password=get_password_hash(obj_in.password),
             full_name=obj_in.full_name,
-            is_superuser=obj_in.is_superuser
         )
+        db_obj.profile_pic = crud_image.get_by_url(
+            db, url=settings.DEFAULT_IMG_URL)
         db.add(db_obj)
         db.commit()
         db.refresh(db_obj)
@@ -33,24 +36,27 @@ class UserCRUD(CRUDBase[User, UserCreate, UserUpdate]):
         else:
             update_data = obj_in.dict(exclude_unset=True)
         if update_data["password"]:
-            hashed_password = get_password_hash(update_data["password"])
+            password = get_password_hash(update_data["password"])
             del update_data["password"]
-            update_data["hashed_password"] = hashed_password
+            update_data["password"] = password
         return super().update(db, db_obj=db_obj, obj_in=update_data)
 
     def authenticate(self, db: Session, *, email: str, password: str) -> Optional[User]:
         user = self.get_by_email(db, email=email)
         if not user:
             return None
-        if not verify_password(password, user.hashed_password):
+        if not verify_password(password, user.password):
             return None
         return user
 
+    def set_role(self, db: Session, db_obj: User, role: UserRole):
+        db_obj.role = role
+        db.add(db_obj)
+        db.commit()
+        db.refresh(db_obj)
+
     def is_active(self, user: User) -> bool:
         return user.is_active
-
-    def is_superuser(self, user: User) -> bool:
-        return user.is_superuser
 
     def add_profile_pic(self, db: Session, db_obj: User, image: Image):
         db_obj.profile_pic = image

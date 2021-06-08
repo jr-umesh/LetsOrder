@@ -1,3 +1,5 @@
+from app.models.user import UserRole
+from app.api.v1.roles import ROLE_POWER
 import os
 from fastapi import File, UploadFile, Depends
 from PIL import Image as PilImage
@@ -15,6 +17,10 @@ from typing import Generator
 
 from app.db.session import SessionLocal
 
+from app.models import User, Image
+from app.schemas import TokenPayload, ImageCreate
+from app import crud
+
 
 def get_db() -> Generator:
     try:
@@ -25,7 +31,7 @@ def get_db() -> Generator:
 
 
 reusable_oauth2 = OAuth2PasswordBearer(
-    tokenUrl=f"{settings.API_PREFIX}/v1/auth/access-token"
+    tokenUrl=f"{settings.API_PREFIX}/auth/access-token"
 )
 
 
@@ -42,7 +48,7 @@ def get_current_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Could not validate credentials",
         )
-    user = user_repo.get(db, id=token_data.sub)
+    user = crud.user.get(db, id=token_data.sub)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return user
@@ -51,18 +57,8 @@ def get_current_user(
 def get_current_active_user(
     current_user: User = Depends(get_current_user),
 ) -> User:
-    if not user_repo.is_active(current_user):
+    if not crud.user.is_active(current_user):
         raise HTTPException(status_code=400, detail="Inactive user")
-    return current_user
-
-
-def get_current_active_superuser(
-    current_user: User = Depends(get_current_user),
-) -> User:
-    if not user_repo.is_superuser(current_user):
-        raise HTTPException(
-            status_code=400, detail="The user doesn't have enough privileges"
-        )
     return current_user
 
 
@@ -80,7 +76,7 @@ def compress(filepath: str, size: int = 600):
     img.save(filepath, "JPEG")
 
 
-async def upload_image(db: Session = Depends(database.get_db), image: UploadFile = File(...)) -> Image:
+async def upload_image(db: Session = Depends(get_db), image: UploadFile = File(...)) -> Image:
     """
     upload image and store image url in database
     """
@@ -91,7 +87,7 @@ async def upload_image(db: Session = Depends(database.get_db), image: UploadFile
     async with aiofiles.open(out_file_path, 'wb') as out_file:
         while content := await image.read(1024):
             await out_file.write(content)
-    db_obj = image_repo.create(db, obj_in=ImageCreate(
+    db_obj = crud.image.create(db, obj_in=ImageCreate(
         url=f"{IMAGE_STATIC_URL_PATH}/{filename}"
     ))
 
@@ -99,7 +95,7 @@ async def upload_image(db: Session = Depends(database.get_db), image: UploadFile
     return db_obj
 
 
-async def upload_images(db: Session = Depends(database.get_db),
+async def upload_images(db: Session = Depends(get_db),
                         images: List[UploadFile] = File(...)) -> List[Image]:
     """
     upload multiple image and store image url in database
@@ -112,9 +108,33 @@ async def upload_images(db: Session = Depends(database.get_db),
         async with aiofiles.open(fp, 'wb') as out_file:
             while content := await image.read(1024):
                 await out_file.write(content)
-        db_obj = image_repo.create(db, obj_in=ImageCreate(
+        db_obj = crud.image.create(db, obj_in=ImageCreate(
             url=f"{IMAGE_STATIC_URL_PATH}/{filename}"
         ))
         compress(fp)
         db_obj_list.append(db_obj)
     return db_obj_list
+
+
+class CheckRole:
+    """
+    Checks the role of the current logged in user
+    This must be kept on each route that needs a permission
+    If no permission needed just not using this on a route is 
+    recommended.
+
+    Checks power of the role that the current user has and compares
+    it with the required power level and only allow if the power level
+    of current user is equal or higher
+    """
+
+    def __init__(self, role) -> None:
+        if role not in UserRole:
+            raise Exception
+        self._role = role
+
+    def __call__(self, user: User = Depends(get_current_active_user)):
+        if ROLE_POWER[user.role] < ROLE_POWER[self._role]:
+            raise HTTPException(
+                status_code=403, detail="Operation not permitted"
+            )
