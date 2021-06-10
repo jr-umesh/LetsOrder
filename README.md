@@ -1,4 +1,5 @@
 # LetsOrder
+
 ## 1. add an .env file with
 PROJECT_NAME=LetsOrder
 SECRET_KEY=
@@ -13,3 +14,5 @@ FIRST_SUPERUSER_EMAIL=
 FIRST_SUPERUSER_PASSWORD=
 
 ## 2. docker-compose up --build to start project
+
+ok
